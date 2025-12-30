@@ -141,7 +141,6 @@ class UrlScanClient:
                 last_status = resp.status_code
                 if resp.status_code == 200:
                     return 200, resp.json()
-                # чаще всего ещё не готово -> 404
             except requests.RequestException:
                 last_status = 0
             time.sleep(poll_every_s)
@@ -159,17 +158,15 @@ class PhishGuard:
     - Для ссылок: считаем отдельно 0..100, затем агрегируем (берём максимум и добавляем его долю).
     """
 
-    # веса (можно менять без перелопачивания кода)
-    W_KEYWORDS = 6                # за совпадение ключевое слово+суффикс
+    W_KEYWORDS = 6
     CAP_KEYWORDS = 30
 
     W_UNICODE_MIX = 25
 
     W_CARD = 60
 
-    # Вклад ссылок в общий риск текста
-    URL_RISK_MULTIPLIER = 0.75    # было 0.8; чуть мягче
-    URL_RISK_CAP = 70            # ограничиваем вклад ссылок, чтобы они не "убивали" всё остальное
+    URL_RISK_MULTIPLIER = 0.75
+    URL_RISK_CAP = 75            # огр. вклада
 
     def __init__(self, cfg: AppConfig):
         self.cfg = cfg
@@ -250,16 +247,12 @@ class PhishGuard:
                         "malicious": verdict.get("malicious"),
                     }
 
-                    # ВАЖНО: в твоём коде score += int(verdict.score).
-                    # У urlscan "score" может быть отрицательным или нестабильным по шкале.
-                    # Поэтому делаем мягкое отображение: переводим в 0..30.
                     raw = verdict.get("score", 0)
                     try:
                         raw = float(raw)
                     except Exception:
                         raw = 0.0
-                    mapped = int(clamp(raw, -100, 100))  # страховка
-                    # мягко: отрицательные не уменьшают наш риск, а положительные дают вклад
+                    mapped = int(clamp(raw, -100, 100))
                     urlscan_points = int(clamp(mapped, 0, 100) * 0.30)
                     if urlscan_points:
                         findings.append(f"urlscan: обнаружены признаки риска (вклад {urlscan_points} баллов)")
@@ -267,7 +260,7 @@ class PhishGuard:
 
         # ---- локальные эвристики URL
 
-        # Чёрный список доменов (у тебя он читался, но нигде не применялся)
+        # Чёрный список доменов
         if host and host in self.cfg.known_bad_domains:
             findings.append(f"Домен в чёрном списке: {host}")
             score += 70
@@ -301,7 +294,7 @@ class PhishGuard:
             findings.append("Есть escape-последовательности (%) или javascript-выражения — подозрительно")
             score += 10
 
-        # Редирект как фактор риска
+        # Редирект чек
         if final_url != candidate and chain:
             findings.append("Обнаружено перенаправление на другой URL")
             score += 20
@@ -323,7 +316,7 @@ class PhishGuard:
 
         lowered = text.lower()
 
-        # 1) ключевые слова (+ суффиксы)
+        # 1) ключевые слова
         keyword_hits: List[str] = []
         for kw in self.cfg.suspicious_keywords:
             for suff in self.cfg.suffixes:
@@ -358,7 +351,6 @@ class PhishGuard:
             score += url_component
             findings.append(f"Ссылки: найдено {len(urls)}; максимальный риск по URL = {max_url_risk}%, вклад в общий риск = {url_component}")
         else:
-            # лёгкая надбавка, если уже нашли "красные флаги", но ссылок нет
             if score > 0:
                 score += 5
 

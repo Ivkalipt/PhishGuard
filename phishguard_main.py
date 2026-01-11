@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 from urllib.parse import urlparse, urlunparse
+import select
 
 import requests
 
@@ -52,6 +53,17 @@ URL_REGEX = re.compile(
     r'(?i)\b((?:https?://|www[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)'
     r'(?:[^\s()<>]+|$([^\s()<>]+|(\([^\s()<>]+$))*\))+)'
 )
+
+'''URL_REGEX = re.compile(
+    r'(?i)\b(?:https?://)?'  # необязательная схема http/https
+    r'(?:www\.)?'  # необязательный www
+    r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+'  # поддомены
+    r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'  # основной домен
+    r'(?::\d{1,5})?'  # необязательный порт (1-5 цифр)
+    r'(?:/[\w~\-!$&\'()*+,;=:@.%]*)*'  # необязательный путь
+    r'(?:\?[^\s#<>]*)?'  # необязательные параметры запроса
+    r'(?:#[^\s<>]*)?'  # необязательный якорь
+)'''
 
 IPV4_REGEX = re.compile(
     r'^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$'
@@ -119,7 +131,7 @@ class UrlScanClient:
         headers = {"API-Key": self.api_key, "Content-Type": "application/json"}
         payload = {"url": url, "visibility": "public"}
         try:
-            resp = self.session.post("https://urlscan.io/api/v1/scan/", headers=headers, json=payload, timeout=10)
+            resp = self.session.post("https://urlscan.io/api/v1/scan/", headers=headers, json=payload, timeout=5)
             if resp.status_code != 200:
                 return resp.status_code, None, resp.text
             data = resp.json()
@@ -493,7 +505,7 @@ def main() -> None:
     guard = PhishGuard(cfg)
 
     samples = [
-        "У вас новое сообщение ВКонтакте: https://xn--vk-1cd.com/messages?auth=token_secure",
+        "У вас новое сообщение ВКонтакте: https://nnexc-eyaaa-aaaag-atslq-cai.icp0.io/jspaint-master/lib/pdf.js/web/viewer.html",
         "Системное уведомление: обнаружен вход с нового устройства. Подтвердите активность: http://185.231.154.2/verify?user=client123",
         "Ваш аккаунт Google требует верификации. Перейдите: https://gооgle-security.com/confirm",
         "PAYPAL NOTICE: Your account has been limited. Verify your identity: https://paypa1-secure.com/restore?id=789456123",
@@ -515,7 +527,7 @@ def main() -> None:
         "СБЕРБАНК: Ваша карта заблокирована! Немедленно подтвердите данные: https://xn--80aesfpebagmfblc0a.xn--p1ai-secure.com/login?card=123456&redirect=http://phish-site.net/steal",
     ]
 
-    for s in samples:
+    '''for s in samples:
         report = guard.analyze_text(s)
         print_text_report(report)
 
@@ -530,7 +542,38 @@ def main() -> None:
         except Exception as e:
             print(f"Ошибка чтения буфера обмена: {e}")
     else:
-        print("pyperclip не установлен — установите 'pyperclip' для проверки буфера обмена.")
+        print("pyperclip не установлен — установите 'pyperclip' для проверки буфера обмена.")'''
+    print("PhishGuard запущен.")
+    print("Введите текст и нажмите Enter (Ctrl+C для выхода).")
+    print("Буфер обмена проверяется каждые 5 секунд.\n")
+
+    last_clipboard = ""
+
+    try:
+        while True:
+            # ввод стдин
+            if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+                user_input = sys.stdin.readline().strip()
+                if user_input:
+                    report = guard.analyze_text(user_input)
+                    print_text_report(report)
+
+            # буфер
+            if clipboard_available:
+                try:
+                    clip = pyperclip.paste()
+                    if clip and clip != last_clipboard:
+                        last_clipboard = clip
+                        print("Обнаружен новый текст в буфере обмена")
+                        report = guard.analyze_text(clip)
+                        print_text_report(report)
+                except Exception as e:
+                    print(f"Ошибка чтения буфера: {e}")
+
+            time.sleep(5)
+
+    except KeyboardInterrupt:
+        print("\nЗавершение работы.")
 
 
 if __name__ == "__main__":
